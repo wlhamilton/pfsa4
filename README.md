@@ -14,6 +14,7 @@ The two main scripts are expressed as R markdown files, and are as follows:
 
 **Warning** Please note some data files are not included in this repository.  These are:
 
-`data/vcf/ghana_2015_study_1555_samples_hbb_genotypes.vcf.gz` which contains host HbS/HbC genotypes for the study samples.
-`data/ghana_2015_study_1555_samples.sample` which also contains host data, including the HbS/HbC genotypes for the study samples.
+* `data/vcf/ghana_2015_study_1555_samples_hbb_genotypes.vcf.gz` which contains host HbS/HbC genotypes for the study samples.
+
+* `data/ghana_2015_study_1555_samples.sample` which also contains host sample metadata (also including the HbS/HbC genotypes for the study samples.)
 
