@@ -2,13 +2,15 @@
 
 ## Prerequisites
 
-Before reaching this point, genotype data was converted to VCF format and to BGEN format.
-Sample information was converted to the QCTOOL/SNPTEST-style .sample format.  
+Before reaching this point, genotype data was converted to VCF format and to BGEN format.  These data reside in:
+* `data/bgen/ghana_2015_study_1555_samples.bgen` and
+* `data/vcf/ghana_2015_study_1555_samples.vcf.gz`
 
-For PC computation, I also created a 'fakediploid' version of the vcf file.
-This makes all samples diploid with homozygous genotypes, and is so that the `qctool -kinship` option works.
+For PC computation, I also created a 'fakediploid' version of the vcf file in `data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz`.  This makes all samples diploid with homozygous genotypes, and is so that the `qctool -kinship` option works.
 
-The code here uses tidyverse:
+Sample information was converted to the QCTOOL/SNPTEST-style `.sample` format, and should reside in `data/ghana_2015_study_1555_samples.sample`.
+
+The code below relies on tidyverse, which must be installed first:
 ```
 library( tidyverse )
 ```
@@ -58,11 +60,11 @@ system(
 ```
 
 Now compute PCs using these SNPs:
-```
+```r
 system(
 	paste(
 		"qctool_v2.2.1",
-		"-g data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf",
+		"-g data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz",
 		"-s data/samples/ghana_2015_study_1555_samples.sample",
 		"-excl-samples-where 'pf7_QC_pass=FALSE'",
 		"-excl-samples-where 'eurofins_final_called=FALSE'",
@@ -192,7 +194,7 @@ system(
 system(
 	paste(
 		"qctool_v2.2.1",
-		"-g data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf",
+		"-g data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz",
 		"-s data/samples/ghana_2015_study_1555_samples.sample",
 		sprintf( "-excl-samples %s", exclusions_filename ),
 		"-incl-positions results/qc/ghana_2015_study_1368_samples_f_gt_0.01_missing_lt_0.25.txt",
@@ -206,7 +208,7 @@ system(
 system(
 	paste(
 		"qctool_v2.2.1",
-		"-g data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf",
+		"-g data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz",
 		"-s data/samples/ghana_2015_study_1555_samples.sample",
 		sprintf( "-excl-samples %s", exclusions_filename ),
 		"-incl-positions results/qc/ghana_2015_study_1368_samples_f_gt_0.01_missing_lt_0.25.txt",
