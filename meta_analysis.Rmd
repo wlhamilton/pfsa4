@@ -1,0 +1,162 @@
+# Meta-analysis of Pfsa4 association
+
+We'll put the results into a data fram called `effects`:
+```R
+library( tidyverse )
+effects = tibble()
+```
+
+## MalariaGEN CP1 data
+
+```r
+library( rbgen )
+
+{
+	G = bgen.load(
+		"data/MalariaGEN_hspf_r1_release/pf/MalariaGEN_hspf_r1_HbS-typing_pf_genotypes.bgen",
+		ranges = data.frame( chromosome = "Pf3D7_04_v3",
+		start = 1121472, end = 1122147 )
+	)
+	G$Pfsa4_call = G$data[which( G$variants$position == 1121472),, 3]
+	G$Pfsa4_call[ G$data[which( G$variants$position == 1121472),, 2]> 0 ] = NA
+
+	samples = readr::read_tsv( "data/MalariaGEN_hspf_r1_release/samples/MalariaGEN_hspf_r1_all_samples.tsv")
+	samples = samples[ match( G$samples, samples$ID ), ]
+	samples$Pfsa4 = 1 - G$Pfsa4_call
+	samples$HbS_carrier = as.integer( samples$HbS_genotype != "HbAA" )
+
+	for( study_country in c( "Gambia", "Kenya" )) {
+		country.data = samples %>% filter( country == study_country )
+		g = glm( Pfsa4 ~ HbS_carrier, data = country.data, family = "binomial" )
+		s = summary(g)$coeff
+		crosstab = table( country.data$HbS_carrier, country.data$Pfsa4 )
+		effects = bind_rows(
+			effects,
+			tibble(
+				study = "Band 2021",
+				country = study_country,
+				beta = s['HbS_carrier', 1 ],
+				se = s['HbS_carrier', 2 ],
+				p = s['HbS_carrier', 4 ],
+				`A:Pfsa4-` = crosstab[1,1],
+				`A:Pfsa4+` = crosstab[1,2],
+				`S:Pfsa4-` = crosstab[2,1],
+				`S:Pfsa4+` = crosstab[2,2]
+			)
+		)
+	}
+}
+```
+
+## Ghana data (this study):
+
+```r
+PCs = readr::read_delim( "results/PCs/ghana_2015_study_1368_samples.post-exclusions.PCs.tsv", comment = '#', delim = "\t" )
+{
+	included_samples = PCs$sample
+	Gh = bgen.load(
+		"results/bgen/ghana_2015_study_1555_samples.bgen",
+		ranges = data.frame( chromosome = "Pf3D7_04_v3", start = 1121472, end = 1122147 ),
+		samples = included_samples
+	)
+	Gh$Pfsa4_call = Gh$data[1,,2]
+	Gh.samples = readr::read_delim( "results/samples/ghana_2015_study_1555_samples.PCs.sample")[-1,]
+	Gh.samples$included = (Gh.samples$sample_roma_id %in% included_samples )
+	Gh.samples = Gh.samples %>% filter( included == TRUE )
+	stopifnot( all( colnames(Gh) == Gh.samples$sample_roma_id ))
+	Gh.samples$Pfsa4 = (1 - Gh$Pfsa4_call)
+
+	library( RSQLite )
+	library( dplyr )
+	db = dbConnect( dbDriver( "SQLite" ), "results/hptest/hptest.sqlite" )
+	results = dbGetQuery( db, "SELECT * FROM ResultView" )
+	top.result = (
+		results
+		%>% filter( analysis == 'samples=qcd/pcs=3' & predictor_rsid == 'rs334' & outcome_position == 1121472 )
+	)
+	crosstab = table(
+		Gh.samples$eurofins_final_Hb_call[ Gh.samples$included ],
+		Gh.samples$Pfsa4[Gh.samples$included]
+	)
+	effects = bind_rows(
+		effects,
+		tibble(
+			study = "this",
+			country = "Ghana",
+			beta = - pull( top.result, "dom:beta_1:dom/outcome=1" ),
+			se = pull( top.result, "dom:se_1" ),
+			p = pull( top.result, "dom:pvalue_1" ),
+			`A:Pfsa4-` = crosstab[1,1],
+			`A:Pfsa4+` = crosstab[1,2],
+			`S:Pfsa4-` = crosstab[2,1],
+			`S:Pfsa4+` = crosstab[2,2]
+		)
+	)
+}
+
+## Saelens et al Mali data
+```r
+{
+	saelens = readr::read_tsv( "data/Saeelens_et_al_Mali_chr4_data_1121472_AT_ratio.tsv" )
+	g = glm( call ~ HbS_genotype, data = saelens, family = "binomial" )
+	s = summary(g)$coeff
+	crosstab = table( saelens$HbS_genotype, saelens$call )
+	effects = bind_rows(
+		effects,
+		tibble(
+			study = "saelens_et_al",
+			country = "Mali",
+			beta = s['HbS_genotypeAS',1],
+			se = s['HbS_genotypeAS',2],
+			p = s['HbS_genotypeAS',4],
+			`A:Pfsa4-` = crosstab[1,1],
+			`A:Pfsa4+` = crosstab[1,2],
+			`S:Pfsa4-` = crosstab[2,1],
+			`S:Pfsa4+` = crosstab[2,2]
+		)
+	)
+}
+```
+
+## Meta-analysis
+
+```r
+source( "scripts/meta.analyse.R" )
+
+meta = meta.analyse( effects$beta[1:4], effects$se[1:4] )
+mildmeta = meta.analyse( effects$beta[3:4], effects$se[3:4] )
+
+effects = bind_rows(
+	effects,
+	tibble(
+		study = "Meta-analysis",
+		country = "*",
+		beta = meta$meta$beta,
+		se = meta$meta$se,
+		p = 2 * pnorm( -abs(meta$meta$beta), sd = meta$meta$se ),
+		`A:Pfsa4-` = sum( effects$`A:Pfsa4-`, na.rm = T ),
+		`A:Pfsa4+` = sum( effects$`A:Pfsa4+`, na.rm = T ),
+		`S:Pfsa4-` = sum( effects$`S:Pfsa4-`, na.rm = T ),
+		`S:Pfsa4+` = sum( effects$`S:Pfsa4+`, na.rm = T )
+	)
+)
+
+effects$OR = exp( effects$beta )
+effects$CI = sprintf( "%.2f - %.2f", exp( effects$beta - 1.96 * effects$se ), exp( effects$beta + 1.96 * effects$se ))
+```
+
+## Output
+
+Output the results:
+```r
+print(effects)
+dir.create( "tables" )
+readr::write_tsv( effects[,c(1:11)], file = "tables/table_SX-meta-analysis.tsv" )
+```
+
+## Figures
+
+Forest and hit plot, appears in `figures/figure_3-hitplot-v2.pdf`:
+```r
+system( "Rscript --vanilla ./figures/hit_and_forest_plot.R" )
+```

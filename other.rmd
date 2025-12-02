@@ -1,0 +1,262 @@
+### Analysing hptest results
+
+Let's load and analysis the association results:
+```r
+library( RSQLite )
+library( dplyr )
+db = dbConnect( dbDriver( "SQLite" ), "results/hptest/hptest.sqlite" )
+results = dbGetQuery( db, "SELECT * FROM ResultView" )
+results[
+	results$analysis == 'samples=qcd/pcs=3' & results$`dom:log10_bf` > 3,
+	c(1, 2, 6, 7, 10, 11, 12, 13, 14, 16:18, 19, 20, 34, 35, 36, 39 )#, 45, 46, 47, 49, 50 )
+] %>% arrange( outcome_chromosome, desc( `dom:log10_bf` ))
+
+```
+
+Just lead SNPs:
+```
+results[
+	results$analysis == 'samples=qcd/pcs=3' & results$outcome_id %in% c( 1105, 13236, 3795, 3797 ),
+	c(1, 2, 6, 7, 11, 12, 13, 14, 16:18, 19, 20, 34, 35, 36, 39)#, 45, 46, 47, 49, 50, 69 )
+] %>% arrange( outcome_chromosome, desc( `dom:log10_bf` ))
+
+## Now let's analyse them jointly
+
+```
+library( rbgen )
+D = bgen.load(
+	"data/bgen/ghana_2015_study_1555_samples.bgen",
+	rsids = unique( results$outcome_rsid )
+)
+D$dosage = D$data[,,2]
+```
+
+Let's compute LD in everyone, or just HbAA individuals:
+```
+library( pheatmap )
+wQC = which( !D$samples %in% exclusions )
+wAA = intersect( wQC,  which( samples$eurofins_final_Hb_call == "HbAA" ))
+ld.all = cor( t( D$dosage[,wQC] ), use = "pairwise.complete.obs" )
+ld.NoHbS = cor( t( D$dosage[, wAA] ), use = "pairwise.complete.obs" )
+
+pdf( file = "images/ld.NoHbS.pdf", width = 5, height = 5 )
+pheatmap(ld.NoHbS)
+dev.off()
+
+pdf( file = "images/ld.all.pdf", width = 5, height = 5 )
+pheatmap(ld.all)
+dev.off()
+
+```
+
+Turns out the chr4 and chr2 / chr11 SNPs are correlated.
+
+## Multivariate regression
+
+```
+design = cbind( samples, t(D$dosage ))
+design = design[wQC,]
+g = glm(
+	(eurofins_final_Hb_call %in% c( "HbAS", "HbSC", "HbSS" )) ~ Pf3D7_04_v3_1121472 + Pf3D7_02_v3_631190 + Pf3D7_11_v3_1058035,
+	data = design,
+	family = "binomial"
+); summary(g)$coeff
+
+print( dim( g$model ))
+```
+
+That was ok but lost > 100 samples.  For a good joint analysis let's fill in some of the missing data using the other SNPs in LD:
+
+```
+genotypes = matrix(
+	c(
+		D$dosage['Pf3D7_02_v3_631190', ],
+		rep( 0, nrow(samples)),
+		D$dosage['Pf3D7_11_v3_1058035', ],
+		D$dosage['Pf3D7_04_v3_1121472', ]
+	),
+	nrow = 4,
+	byrow = T,
+	dimnames = list(
+		c("Pfsa1", "Pfsa2", "Pfsa3", "New" ),
+		samples[,1]
+	)
+)
+sapply( rownames(genotypes)[-2], function(i) { table( is.na( genotypes[i,] ))})
+
+alternatives = list(
+	Pfsa1 = c( 'Pf3D7_02_v3_630290', 'Pf3D7_02_v3_630545' ),
+	Pfsa2 = c( 'Pf3D7_11_v3_1057437' ),
+	New = c( 'Pf3D7_04_v3_1122147' )
+)
+for( name in names( alternatives )) {
+	a = alternatives[[name]]
+	for( i in 1:length(a) ) {
+		w = which( is.na(genotypes[name,] ))
+		if( length(w) > 0 ) {
+			genotypes[name,w] = D$dosage[a[i],w]
+		}
+	}
+}
+sapply( rownames( genotypes )[-2], function(i) { table( is.na( genotypes[i,] ))})
+```
+
+```
+# Invert the chr4 locus, where the ref allele is HbS-associated
+genotypes[4,] = 1 - genotypes[4,]
+samples$combined_pf_genotype = sapply(
+	1:ncol( genotypes ),
+	function(i) {
+		paste( genotypes[,i], collapse = ':' )
+	}
+)
+w = grep( "NA", samples$combined_pf_genotype, invert = TRUE )
+
+table( samples$eurofins_final_Hb_call[w], samples$combined_pf_genotype[w])
+```
+
+```
+library( nnet )
+levels = c(
+	'0:0:0:0',
+	'0:0:0:1',
+	'0:0:1:0',
+	'0:0:1:1',
+	'1:0:0:0',
+	'1:0:0:1',
+	'1:0:1:0',
+	'1:0:1:1'
+)
+
+samples$HbAS_or_HbSS = samples$eurofins_final_Hb_call %in% c( "HbAS", "HbSS", "HbSC" )
+g = multinom(
+	combined_pf_genotype ~ HbAS_or_HbSS,
+	data = samples[w,]
+)
+gs = summary(g)
+
+plot.data = data.frame(
+	genotype = rownames( gs$coeff ),
+	beta = gs$coeff[,2],
+	se = gs$standard.errors[,2]
+)
+plot.data$lower = plot.data$beta - 1.96 * plot.data$se
+plot.data$upper = plot.data$beta + 1.96 * plot.data$se
+
+
+p = (
+	ggplot( data = plot.data[-c(4:5), ] )
+	+ geom_segment( aes( x = lower, xend = upper, y = genotype, yend = genotype ), colour = '#777777', linewidth = 2 )
+	+ geom_point( aes( x = beta, y = genotype ), size = 4 )
+	+ ylab( "Pf genotype" )
+	+ xlab( "Increased log-odds of Pf genotype\nin individuals with HbS" )
+	+ theme_minimal()
+	+ theme(
+		axis.text.y = element_text( angle = 0 ),
+		axis.title.y = element_text( angle = 0, vjust = 0.5 ),
+	)
+)
+ggsave( p, file = "images/multinomial_effect_sizes.pdf", width = 4, height = 3 )
+
+
+## Look at LD in Pf6
+
+ld.path = "~/Projects/malariagen/Hspf-Nature-2021/analysis/parasite/ld/pf6/results/pf6/results"
+
+what = c(
+	"pf6_CAF_Congo_DR",
+	"pf6_EAF_Kenya",
+	"pf6_EAF_Malawi",
+	"pf6_EAF_Tanzania",
+	"pf6_WAF_Cameroon",
+	"pf6_WAF_Gambia",
+	"pf6_WAF_Ghana",
+	"pf6_WAF_Guinea",
+	"pf6_WAF_Mali"
+)
+pf6.ld = data.frame()
+for( name in what ) {
+	db = dbConnect(
+		dbDriver( "SQLite" ),
+		sprintf( "%s/%s-ld.between.sqlite", ld.path, name )
+	)
+	print(name)
+	X = dbGetQuery( db, "SELECT * FROM AnnotatedRecomputed2RView WHERE g1_position IN ( 631190, 1122147, 1058035 ) AND g2_position IN ( 631190, 1122147, 1058035 )" )
+	print(head(X))
+	pf6.ld = rbind( pf6.ld, X )
+}
+View(
+pf6.ld[pf6.ld$g1_id != pf6.ld$g2_id, c( "analysis", "g1_chromosome", "g1_position", "g2_chromosome", "g2_position", "N", "g1_frequency", "g2_frequency", "r" )
+])
+
+format.position <- function( n ) {
+	formatC( n, big.mark=',', format = "f", digits = 0 )
+}
+
+ld.table = data.frame(
+	analysis = pf6.ld$analysis,
+	g1 = sprintf( "%s:%s", pf6.ld$g1_chromosome, format.position(pf6.ld$g1_position) ),
+	g2 = sprintf( "%s:%s", pf6.ld$g2_chromosome, format.position(pf6.ld$g2_position) ),
+	g1_frequency = pf6.ld$g1_frequency,
+	g2_frequency = pf6.ld$g2_frequency,
+	N = pf6.ld$N,
+	r = pf6.ld$r
+)
+ld.table = ld.table[-which( ld.table[,2] == ld.table[,3]), ]
+
+frequencies = rowSums( genotypes, na.rm = T ) / rowSums( !is.na( genotypes ))
+ld = cor( t( genotypes ), use = "pairwise.complete.obs" )
+ld.table = rbind(
+	ld.table,
+	data.frame(
+		analysis = "Ghana_1555",
+		g1 = c( "Pf3D7_02_v3:631,190", "Pf3D7_02_v3:631,190", "Pf3D7_04_v3:1,122,147" ),
+		g2 = c( "Pf3D7_04_v3:1,122,147", "Pf3D7_11_v3:1,058,035", "Pf3D7_11_v3:1,058,035" ),
+		g1_frequency = frequencies[ c( 1, 1, 4 )],
+		g2_frequency = frequencies[ c( 4, 3, 3 )],
+		N = 1555,
+		r = ld[
+			matrix(c(
+				1,4,
+				1,3,
+				4,3
+			), byrow = T, ncol = 2
+		)]
+	)
+)
+
+write_tsv( ld.table, file = "results/ld/pf6_ld.tsv" )
+
+### Forest plot
+fp.data = data.frame(
+	country = c( "Gambia", "Kenya", "Ghana" ),
+	type = c( "SM", "SM", "Community" ),
+	beta = c( 3.26308506994923, 3.3235255961885, 3.140782 ),
+	se = c( 1.02571188139112, 0.426214354092067, 0.3997953  )
+)
+
+p = (
+	ggplot( data = fp.data )
+	+ geom_segment( aes( x = exp(beta - 1.96 * se), xend = exp(beta + 1.96 * se), y = country, yend = country ), colour = 'grey' )
+	+ geom_point( aes( x = exp(beta), y = country ))
+	+ theme_minimal()
+	+ xlab( "OR and 95% CI")
+	+ ylab( "Country" )
+)
+ggsave( p, file = "images/forest_plot_Pfsa3.pdf", width = 4, height = 3 )
+
+fp.data = data.frame(
+	set = c( "Gambia+Kenya SM", "Ghana" ),
+	beta = c( -0.146710997964078, -2.068463  ),
+	se = c( 0.246537633390413, 0.4638758 )
+)
+p = (
+	ggplot( data = fp.data )
+	+ geom_segment( aes( x = exp(beta - 1.96 * se), xend = exp(beta + 1.96 * se), y = set, yend = set ), colour = 'grey' )
+	+ geom_point( aes( x = exp(beta), y = set ))
+	+ theme_minimal()
+	+ xlab( "OR and 95% CI")
+	+ ylab( "Sample set" )
+	+ scale_x_log10()
+)
+ggsave( p, file = "images/forest_plot_chr4:1122147.pdf", width = 4, height = 3 )
