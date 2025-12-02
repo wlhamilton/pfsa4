@@ -6,8 +6,14 @@ Hamilton W. et al, "*A fourth locus in the Plasmodium falciparum genome associat
 
 ## Running the scripts
 
-The two main scripts are expressed as R markdown files as follows:
+The two main scripts are expressed as R markdown files, and are as follows:
 
 * `association.Rmd` which prepares data, computes principal components, and conductes genome-wide association tests between P.falciparum genetic variants and the host genotypes HbS and HbC
 
 * `meta_analysis.Rmd` which meta-analyses the main signal across datasets.
+
+**Warning** Please note some data files are not included in this repository.  These are:
+
+`data/vcf/ghana_2015_study_1555_samples_hbb_genotypes.vcf.gz` which contains host HbS/HbC genotypes for the study samples.
+`data/ghana_2015_study_1555_samples.sample` which also contains host data, including the HbS/HbC genotypes for the study samples.
+
