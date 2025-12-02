@@ -1,6 +1,9 @@
 # Meta-analysis of Pfsa4 association
 
-We'll put the results into a data fram called `effects`:
+Before getting here, you should first have run `association.Rmd` to generate association test statistics.
+
+This file puts together Ghana association test results with those from other studies, for a meta-analysis.
+The results will be put  into a data frame called `effects`:
 ```R
 library( tidyverse )
 effects = tibble()
