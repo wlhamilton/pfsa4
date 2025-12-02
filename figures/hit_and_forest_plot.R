@@ -69,7 +69,7 @@ data$coding[ data$coding == TRUE ] = "coding"
 	hitplot( data, region, genes, "dom:log10_bf" )
 
 	forest.plot(
-		readr::read_tsv( "tables/table_2_meta-analysis.tsv" )
+		readr::read_tsv( "tables/table_SX-meta-analysis.tsv" )
 	)
 
 	dev.off()
