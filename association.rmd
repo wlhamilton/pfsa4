@@ -15,10 +15,7 @@ The code below relies on tidyverse, which must be installed first:
 library( tidyverse )
 ```
 
-The code also uses `qctool` and `hptest` which can be obtained from:
-
-* [QCTOOL website](https://www.chg.ox.ac.uk/~gav/qctool/)
-* [HPTEST website](https://www.chg.ox.ac.uk/~gav/hptest/)
+The code also uses [QCTOOL](https://www.chg.ox.ac.uk/~gav/qctool/) and [HPTEST](https://www.chg.ox.ac.uk/~gav/hptest/).
 
 ## Load data
 
