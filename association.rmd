@@ -3,365 +3,246 @@
 ## Prerequisites
 
 Before reaching this point, genotype data was converted to VCF format and to BGEN format.  These data reside in:
-* `data/bgen/ghana_2015_study_1555_samples.bgen` and
-* `data/vcf/ghana_2015_study_1555_samples.vcf.gz`
+* `results/bgen/ghana_2015_study_1555_samples.bgen` and
+* `results/vcf/ghana_2015_study_1555_samples.vcf.gz`
 
-For PC computation, I also created a 'fakediploid' version of the vcf file in `data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz`.  This makes all samples diploid with homozygous genotypes, and is so that the `qctool -kinship` option works.
+For PC computation, a 'fake diploid' version of the input vcf file was also created, in `results/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz`.
+This makes all samples diploid with homozygous genotypes, and is so that the `qctool -kinship` option works.
 
 Sample information was converted to the QCTOOL/SNPTEST-style `.sample` format, and should reside in `data/ghana_2015_study_1555_samples.sample`.
 
+The main results were then generated using the pipeline in the `pipeline` folder.
+
+## Prerequisites
+
 The code below relies on tidyverse, which must be installed first:
 ```
-library( tidyverse )
-```
+library( dplyr )
+library( tibble )
 
-The code also uses [QCTOOL](https://www.chg.ox.ac.uk/~gav/qctool/) and [HPTEST](https://www.chg.ox.ac.uk/~gav/hptest/).
-
-## Load data
-
-```r
-samples = readr::read_table( "data/ghana_2015_study_1555_samples.sample" )
-samples = samples[-1,]
-
-wIn = which( samples$pf7_QC_pass == 'TRUE' & samples$eurofins_final_called == 'TRUE' )
-stopifnot( length( wIn ) == 1368 )
-```
-
-## Compute principal components
-
-First we use QCTOOL to compute principal components.
-QCTOOL computes a matrix of pairwise kinship coefficients (the 'relatedness matrix')
-based on genome-wide genotypes, allowing for pairwise missingness, and then eigendecomposes it to get the PCs.
-
-First we compute per-variant summary statistics across included samples:
-
-```r
-system(
-	paste(
-		"qctool_v2.2.1",
-		"-g data/bgen/ghana_2015_study_1555_samples.bgen",
-		"-threshold 0.9",
-		"-analysis-name 1368_samples",
-		"-s data/samples/ghana_2015_study_1555_samples.sample",
-		"-excl-samples-where 'pf7_QC_pass=FALSE'",
-		"-excl-samples-where 'eurofins_final_called=FALSE'",
-		"-snp-stats",
-		"-osnp sqlite://results/snp-stats/ghana_2015_study.snp-stats.sqlite:SnpStats1368"
-	)
-)
-```
-
-Next, find common (>1% MAF) biallelic SNPs:
-```
-system(
-	sprintf(
-		'sqlite3 results/snp-stats/ghana_2015_study.snp-stats.sqlite "%s" > "results/qc/ghana_2015_study_1368_samples_f_gt_0.01_missing_lt_0.25.txt"',
-		"SELECT chromosome || ':' || position FROM SnpStats1368 WHERE minor_allele_frequency >= 0.01 AND ((A+B)/1368.0) >= 0.75"
-	)
-)
-```
-
-Now compute PCs using these SNPs:
-```r
-system(
-	paste(
-		"qctool_v2.2.1",
-		"-g data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz",
-		"-s data/samples/ghana_2015_study_1555_samples.sample",
-		"-excl-samples-where 'pf7_QC_pass=FALSE'",
-		"-excl-samples-where 'eurofins_final_called=FALSE'",
-		"-incl-positions results/qc/ghana_2015_study_1368_samples_f_gt_0.01_missing_lt_0.25.txt",
-		"-kinship results/PCs/ghana_2015_study_1368_samples.kinship.csv",
-		"-UDUT results/PCs/ghana_2015_study_1368_samples.UDUT.csv",
-		"-PCs 20",
-		"-osample results/PCs/ghana_2015_study_1368_samples.PCs.tsv"
-	)
-)
-```
-
-Now let's load the PCs and have a look:
-
-```
-PCs = readr::read_delim( "results/PCs/ghana_2015_study_1368_samples.PCs.tsv", comment = '#', delim = "\t" )
-kinship = readr::read_csv( "results/PCs/ghana_2015_study_1368_samples.kinship.csv", comment = '#' )
-```
-
-Let's look at the relatedness values between distinct samples:
-```
-between = kinship[ kinship$sample_1 != kinship$sample_2, ]
-hist( pmin( between$value, 0.5 ), 100 )
-```
-
-We identify sample outliers if they have kinship > 0.5:
-```
-outliers = c(
-	between$sample_1[ which( between$value > 0.5 ) ],
-	between$sample_2[ which( between$value > 0.5 ) ]
-)
-```
-
-Plot the PCs:
-```r
-dir.create( "figures" )
-PCs$colour = 'black'
-PCs$colour[ PCs$sample %in% outliers ] = 'red'
-{
-	pdf( file = "figures/figure_S1A.pdf", width = 4, height = 3  )
-	par( mar = c( 4.1, 4.1, 1.1, 1.1 ))
-	plot(
-		PCs[['PC_1']],
-		PCs[['PC_2']],
-		pch = 19,
-		col = PCs$colour,
-		bty = 'n',
-		xlab = "PC 1",
-		ylab = "PC 2"
-	)
-	grid()
-	legend(
-		"topleft",
-		legend = c( "Has r > 0.5", "No r > 0.5" ),
-		col = c( "red", "black" ),
-		pch = 19,
-		bty = 'n'
-	)
-	dev.off()
+echo = function( message, ... ) {
+	cat( sprintf( message, ... ))
 }
 ```
 
-To get rid of the outlying samples, we'll implement a 'greedy' algorithm.
-This iteratively removes a sample that has the highest number of
-relatives (at the given threshold, here 0.5) until there aren't any related samples left.
-(The point of this algorithm is to remove as few samples as possible, while not leaving any pairs above the threshold.)
+We specify main and 'strict' sample set analyses as follows:
+```r
+analyses = list(
+	main = 'thin=100bp-r=0.5',
+	strict = 'thin=100bp-r=0.2'
+)
+```
+
+## Loading data:
+
+We start by loading samples, PCs, and host and parasite genotypes for analysis:
 
 ```r
-compute.exclusions.greedy <- function( kinship, threshold = 0.5 ) {
-	# Find pairs above threshold
-	# and symmetrise (so that each pair appears both ways round):
-	data = kinship[ kinship$value > threshold & kinship$sample_1 != kinship$sample_2, ]
-	data = rbind( data, data[c(2,1,3,4)])
-	samples = unique( sort( c( data$sample_1, data$sample_2 )))
+echo( "++ Loading data...\n" )
+samples = list(
+	main   = readr::read_table( sprintf( "results/samples/ghana_2015_study_1555_samples.PCs-%s.sample", analyses$main ))[-1,] %>% filter( !is.na( PC_1 )),
+	strict = readr::read_table( sprintf( "results/samples/ghana_2015_study_1555_samples.PCs-%s.sample", analyses$strict ))[-1,] %>% filter( !is.na( PC_1 ))
+)
+genotypes = list(
+	hbb = readr::read_tsv( pipe( "gunzip -c results/vcf/ghana_2015_study_1555_samples_hbb_genotypes.vcf.gz | grep -v '^##'" ))
+)
+hbb = as.matrix( genotypes$hbb[,10:ncol(genotypes$hbb)])
+rownames(hbb) = genotypes$hbb$ID
 
-	exclusions = c()
-	finished = FALSE
-	while( nrow(data) > 0 ) {
-		# count the number of related pairs per sample
-		counts = sort(
-			sapply( samples, function(s) {
-				length( which( data[['sample_1']] == s ))
-			}),
-			decreasing = T
+samples$main$rs334 = hbb['rs334', samples$main$sample_roma_id ]
+samples$main$rs33930165 = hbb['rs33930165', samples$main$sample_roma_id ]
+samples$strict$rs334 = hbb['rs334', samples$strict$sample_roma_id ]
+samples$strict$rs33930165 = hbb['rs33930165', samples$strict$sample_roma_id ]
+
+G = rbgen::bgen.load( "results/bgen/ghana_2015_study_1555_samples.bgen", ranges = tibble::tibble(
+	chromosome = sprintf( "Pf3D7_%02d_v3", c( 2, 11, 4 )),
+	start = c( 631190, 1058035, 1121472 ),
+	end = c( 631190, 1058035, 1121472 )
+))
+G$dosage = G$data[,,2]
+
+samples$main$Pfsa1 = G$dosage[ 'Pf3D7_02_v3_631190', samples$main$sample_roma_id ]
+samples$main$Pfsa3 = G$dosage[ 'Pf3D7_11_v3_1058035', samples$main$sample_roma_id ]
+samples$main$Pfsa4 = G$dosage[ 'Pf3D7_04_v3_1121472', samples$main$sample_roma_id ]
+samples$main$pfsa = gsub( "0", "-", gsub( "1", "+", sapply( 1:nrow( samples$main ), function(i) {
+	sprintf( "%s %s %s", samples$main$Pfsa1[i], samples$main$Pfsa3[i], 1 - samples$main$Pfsa4[i] )
+})))
+```
+
+## Computation of sample counts for main text:
+```r
+echo( "++ Main analysis sample counts:\n" )
+addmargins( table( samples$main$eurofins_final_Hb_call, samples$main$rs334 ) )
+echo( "++ Strict analysis sample counts:\n" )
+addmargins( table( samples$strict$eurofins_final_Hb_call, samples$strict$rs334 ) )
+```
+
+
+## Loading association results:
+
+```
+library( RSQLite )
+library( tibble )
+results = tibble()
+for( name in names(analyses) ) {
+	analysis = analyses[[name]]
+	db = dbConnect( dbDriver( "SQLite" ), sprintf( "results/hptest/hptest-%s.sqlite", analysis ))
+	X = dplyr::bind_cols(
+		tibble(
+			analysis_type = name,
+			analysis_detail = analysis
+		),
+		as_tibble(
+			dbGetQuery( db, "SELECT * FROM ResultView WHERE predictor_rsid == 'rs334' AND outcome_position IN ( 1121472, 631190, 1058035 )" )
 		)
-		# sanity check
-		stopifnot( counts[1] > 0 )
-		name = names(counts)[1]
-		exclusions = c( exclusions, name )
-
-		# Remove that sample from the data
-		data = data[
-			data[['sample_1']] != name & data[['sample_2']] != name,
-		]
-	}
-	return( exclusions )
-}
-
-threshold = 0.5
-exclusions = c(
-	samples$sample_roma_id[ !samples$sample_roma_id %in% samples$sample_roma_id[wIn] ],
-	compute.exclusions.greedy( kinship, 0.5 )
-)
-```
-
-Save the exclusions:
-```r
-exclusions_filename = sprintf( "results/PCs/1368_relatedness_exclusions_%.2f.txt", threshold )
-write( exclusions, file = exclusions_filename, ncol = 1 )
-```
-
-Now let's recompute the snp-stats and PCs using only non-excluded samples:
-```r
-system(
-	paste(
-		"qctool_v2.2.1",
-		"-g data/bgen/ghana_2015_study_1555_samples.bgen",
-		"-threshold 0.9",
-		"-analysis-name 1368_samples",
-		"-s data/samples/ghana_2015_study_1555_samples.sample",
-		sprintf( "-excl-samples %s", exclusions_filename ),
-		"-snp-stats",
-		"-osnp sqlite://results/snp-stats/ghana_2015_study.snp-stats.sqlite:SnpStats1368"
 	)
-)
-
-system(
-	paste(
-		"qctool_v2.2.1",
-		"-g data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz",
-		"-s data/samples/ghana_2015_study_1555_samples.sample",
-		sprintf( "-excl-samples %s", exclusions_filename ),
-		"-incl-positions results/qc/ghana_2015_study_1368_samples_f_gt_0.01_missing_lt_0.25.txt",
-		"-kinship results/PCs/ghana_2015_study_1368_samples.post-exclusions.kinship.csv",
-		"-UDUT results/PCs/ghana_2015_study_1368_samples.post-exclusions.UDUT.csv",
-		"-PCs 20",
-		"-osample results/PCs/ghana_2015_study_1368_samples.post-exclusions.PCs.tsv"
-	)
-)
-
-system(
-	paste(
-		"qctool_v2.2.1",
-		"-g data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz",
-		"-s data/samples/ghana_2015_study_1555_samples.sample",
-		sprintf( "-excl-samples %s", exclusions_filename ),
-		"-incl-positions results/qc/ghana_2015_study_1368_samples_f_gt_0.01_missing_lt_0.25.txt",
-		"-load-UDUT results/PCs/ghana_2015_study_1368_samples.post-exclusions.UDUT.csv",
-		"-loadings results/PCs/ghana_2015_study_1368_samples.post-exclusions.loadings.csv"
-	)
-)
-```
-
-Now let's load and inspect the revised PCs:
-```r
-PCs = readr::read_delim( "results/PCs/ghana_2015_study_1368_samples.post-exclusions.PCs.tsv", comment = '#', delim = "\t" )
-PCs$colour = 'black'
-PCs$colour[ PCs$sample %in% outliers ] = 'red'
-
-{
-	pdf( file = "figures/figure_S1B.pdf", width = 6, height = 5  )
-	layout(
-		matrix( 1:4, byrow = T, nrow = 2 )
-	)
-	for( i in 1:4 ) {
-		plot(
-			PCs[[sprintf( 'PC_%d', i )]],
-			PCs[[sprintf( 'PC_%d', i+1 )]],
-			pch = 19,
-			col = rgb( 0, 0, 0, 0.2),
-			bty = 'n',
-			xlab = sprintf( "PC %d", i ),
-			ylab = sprintf( "PC %d", i+1 )
+	results = dplyr::bind_rows(
+		results,
+		X %>% select(
+			`analysis_type`,
+			`analysis_detail`,
+			`analysis`,
+			`predictor_rsid`,
+			`outcome_chromosome`,
+			`outcome_position`,
+			`N`,
+			`missing`,
+			`outcome=0`,
+			`outcome=1`,
+			`predictor=0`,
+			`predictor=1`,
+			`predictor=2`,
+			`minimum_outcome_count`,
+			`minimum_predictor_count`,
+			`minimum_expected_predictor_allele_count`,
+			`minimum_expected_predictor_allele_count_genotype`,
+			`add:converged`,
+			`add:iterations`,
+			`add:fit_time`,
+			`add:ll`,
+			`add:beta_1:add/outcome=1`,
+			`add:sd_1`,
+			`add:log10_bf`,
+			`add:se_1`,
+			`add:pvalue_1`,
+			`dom:converged`,
+			`dom:iterations`,
+			`dom:fit_time`,
+			`dom:ll`,
+			`dom:beta_1` = `dom:beta_1:dom/outcome=1`,
+			`dom:sd_1`,
+			`dom:log10_bf`,
+			`dom:prior_mode_1`,
+			`dom:se_1`,
+			`dom:pvalue_1`,
+			`comment`
+		) %>% mutate(
+			bf = sprintf( "%.3g", 10^`dom:log10_bf` ),
+			pvalue = sprintf( "%.3g", `dom:pvalue_1` ),
+			OR = exp( abs(`dom:beta_1`) ),
+			lower = exp( abs(`dom:beta_1`) - 1.96 * `dom:se_1` ),
+			upper = exp( abs(`dom:beta_1`) + 1.96 * `dom:se_1` ),
+			interval = sprintf( "%.2f (%.2f - %.2f)", OR, lower, upper )
 		)
-		grid()
-	}
-	dev.off()
-}
-```
-
-Let's plot the loadings too:
-```r
-source( "scripts/compute.manhattan.plot.positions.R")
-
-loadings = (
-	readr::read_csv( "results/PCs/ghana_2015_study_1368_samples.post-exclusions.loadings.csv", comment = '#' )
-	%>% arrange( chromosome, position )
-)
-loadings$plot.position = compute.manhattan.plot.positions( loadings$chromosome, loadings$position )
-colours = c( "#6e90ca", "#292973" )
-chromosomes = sprintf( "Pf3D7_%02d_v3", 1:14 )
-loadings$chromosome = factor( loadings$chromosome, levels = chromosomes )
-
-{
-	pdf( file = "images/supplementary_figure_3.pdf", width = 6, height = 6  )
-	npcs = 5
-	layout.m = rep( 0, (2*npcs)+1 )
-	layout.m[ (1:npcs)*2 ] = 1:npcs
-	layout(
-		matrix( layout.m, ncol = 1 ),
-		heights = (layout.m > 0) * 0.9 + 0.1
 	)
-	for( i in 1:npcs ) {
-		par( mar = c( 0.5, 4.1, 0.5, 1.1 ))
-		plot(
-			loadings$plot.position,
-			abs( loadings[[sprintf( 'eigenvector_%d', i ) ]] ),
-			pch = 19,
-			col = colours[ (( as.integer( loadings$chromosome ) - 1 ) %% 2 ) + 1 ],
-			bty = 'n',
-			xlab = "Position in genome",
-			ylab = sprintf( "PC %d", i ),
-			xaxt = 'n',
-			yaxt = 'n'
-		)
-		grid()
-		axis(2)
-	}
-	dev.off()
 }
 ```
 
-PCs 4 and above appear to pick up local genetic regions.
-
-## Association testing
-
-### Preparing the sample file
-Before association testing we create a .sample file including the above PCs:
-
+## Numbers for main association paragraphs:
 ```r
-samples = readr::read_delim( "data/samples/ghana_2015_study_1555_samples.sample", delim = " " )
-types = as.character( samples[1,] )
-samples = samples[-1,]
-
-samples = cbind(
-	samples,
-	PCs[
-		match( samples$sample_roma_id, PCs$sample ),
-		grep( "PC_[0-9]*", colnames(PCs))
-	]
-)
-types = c( types, rep( "C", 20 ))
-
-source( "scripts/write.sample.file.R" )
-write.sample.file(
-	samples,
-	types,
-	"data/samples/ghana_2015_study_1555_samples.PCs.sample"
+print(
+	results %>% select(
+		analysis_detail, analysis, predictor_rsid, outcome_chromosome, outcome_position,
+		`bf`, `pvalue`, `dom:log10_bf`, `dom:pvalue_1`, `interval`, `dom:beta_1`, `dom:se_1`
+	) %>% filter(
+		(analysis_detail == 'thin=100bp-r=0.5' & analysis %in% c( 'samples=qcd:pcs=5', 'samples=qcd:pcs=2' ))
+		| (analysis_detail == 'thin=100bp-r=0.2' & analysis == 'samples=qcd:pcs=2')
+	),
+	width = 1000,
+	n = 50
 )
 ```
 
-### Running hptest
-
-We'll run HPTEST several times, so capture here are the basic command-line arguments:
+## Computation of Pfsa join genotype counts:
 ```r
-boilerplate = paste(
-	"hptest_v2.2.1",
-	"-threads 8",
-	"-analysis-name %s",
-	"-outcome-genotypes data/bgen/ghana_2015_study_1555_samples.bgen",
-	"-s data/samples/ghana_2015_study_1555_samples.PCs.sample",
-	"-predictor data/vcf/ghana_2015_study_1555_samples_hbb_genotypes.vcf.gz",
-	"-o results/hptest/hptest.sqlite:Result",
-	"-model add dom gen:add+het",
-	"%s",
-	sep = ' '
+(
+	samples$main
+	%>% filter( !is.na( Pfsa1 ) & !is.na( Pfsa4 ) & !is.na( Pfsa3 ))
+	%>% group_by( (rs334 %in% c( "0/1", "1/1" )), pfsa )
+	%>% count()
 )
 ```
 
-Let's run hptest in several ways storing into a single results table:
-* Across all samples without PCs
-* Across QC'd samples with no PCs
-* Across QC'd samples with the top three PCs
-* (For HbC association) Across QC'd samples with the top three PCs, excluding samples carrying HbS genotypes
 
-Results will all be placed into one database, `results/hptest/hptest.sqlite`:
-```
-system( sprintf( boilerplate, "samples=all/pcs=0", "" ))
-system( sprintf( boilerplate, "samples=qcd/pcs=0", "-incl-samples-where 'PC_1!=NA'" ))
-system( sprintf( boilerplate, "samples=qcd/pcs=3", "-covariates PC_1 PC_2 PC_3 -incl-samples-where 'PC_1!=NA'" ))
-system( sprintf(
-	boilerplate,
-	"samples=qcd/pcs=3/no-HbS",
-	"-excl-samples-where 'eurofins_final_Hb_call=HbAS' -excl-samples-where 'eurofins_final_Hb_call=HbSS' -excl-samples-where 'eurofins_final_Hb_call=HbSC' -covariates PC_1 PC_2 PC_3" ))
-```
-
-## Figures
-
-Manhattan, appears in `figures/figure_2-manhattan-new.pdf`:
+## Inspection of HbC analysis:
 ```r
-system( "Rscript --vanilla ./figures/manhattan.R" )
+echo( "++ Main analysis HbC sample counts:\n" )
+addmargins( table( samples$main$eurofins_final_Hb_call, samples$main$rs33930165 )[c( "HbAA", "HbAC", "HbCC"), ] )
 ```
 
-QQ-plot, appears in `figures/figure_SX-qqplot.pdf`:
 ```r
-system( "Rscript --vanilla ./figures/qqplot.R" )
+library( RSQLite )
+analysis = "thin=100bp-r=0.5"
+db = dbConnect( dbDriver( "SQLite" ), sprintf( "results/hptest/hptest-%s.sqlite", analysis ))
+HbC = (
+	as_tibble(
+		dbGetQuery( db, "SELECT RV.*, V.alleleA AS outcome_alleleA, V.alleleB AS outcome_alleleB FROM ResultView RV INNER JOIN Variant V ON V.id == RV.outcome_id WHERE predictor_rsid == 'rs33930165' AND analysis == 'samples=qcd:pcs=2:no-HbS'" )
+	)
+		%>% select(
+		`analysis`,
+		`predictor_rsid`,
+		`outcome_chromosome`,
+		`outcome_position`,
+		`outcome_alleleA`,
+		`outcome_alleleB`,
+		`N`,
+		`missing`,
+		`outcome=0`,
+		`outcome=1`,
+		`predictor=0`,
+		`predictor=1`,
+		`predictor=2`,
+		`minimum_outcome_count`,
+		`minimum_predictor_count`,
+		`minimum_expected_predictor_allele_count`,
+		`minimum_expected_predictor_allele_count_genotype`,
+		`add:converged`,
+		`add:iterations`,
+		`add:fit_time`,
+		`add:ll`,
+		`add:beta_1:add/outcome=1`,
+		`add:sd_1`,
+		`add:log10_bf`,
+		`add:se_1`,
+		`add:pvalue_1`,
+		`dom:converged`,
+		`dom:iterations`,
+		`dom:fit_time`,
+		`dom:ll`,
+		`dom:beta_1` = `dom:beta_1:dom/outcome=1`,
+		`dom:sd_1`,
+		`dom:log10_bf`,
+		`dom:prior_mode_1`,
+		`dom:se_1`,
+		`dom:pvalue_1`,
+		`comment`
+	) %>% mutate(
+		bf = sprintf( "%.3g", 10^`dom:log10_bf` ),
+		pvalue = sprintf( "%.3g", `dom:pvalue_1` ),
+		OR = exp( abs(`dom:beta_1`) ),
+		lower = exp( abs(`dom:beta_1`) - 1.96 * `dom:se_1` ),
+		upper = exp( abs(`dom:beta_1`) + 1.96 * `dom:se_1` ),
+		interval = sprintf( "%.2f (%.2f - %.2f)", OR, lower, upper )
+	)
+)
+
+HbC %>% arrange( desc( `dom:log10_bf` ))
 ```
 
+## Inspectino of supplementary PCs:
+
+```r
+original_pcs = readr::read_csv( "results/PCs/ghana_2015_study_1368_samples-thin=1bp-r=0.5.loadings.csv", comment = '#' )
+original_pcs %>% arrange( desc( abs(eigenvector_3 )))
+original_pcs %>% arrange( desc( abs(eigenvector_4 )))
+```
