@@ -6,11 +6,17 @@ Hamilton W. et al, "*A fourth locus in the Plasmodium falciparum genome associat
 
 ## Running the scripts
 
-The two main scripts are expressed as R markdown files, and are as follows:
+The main analysis is provided using a [snakemake](https://snakemake.readthedocs.io/en/stable/index.html) pipeline, which can be found in the `pipeline` folder.  We ran this using `snakemake` version `7.32.3`, like this:
+```
+snakemake -s pfsa4/pipeline/master.smk -c<n>
+```
+where `<n>` should be replaced with the number of threads you want the pipeline to use.  All results from the pipeline will appear in the `results/` folder.
 
-* `association.Rmd` which prepares data, computes principal components, and conductes genome-wide association tests between P.falciparum genetic variants and the host genotypes HbS and HbC
+Subsequent analysis of the results was done with two scripts:
 
-* `meta_analysis.Rmd` which meta-analyses the main signal across datasets.
+* `association.Rmd` which post-analyses the pipeline outputs to generate results for the main text and supplementary.
+
+* `meta_analysis.Rmd` which focusses on meta-analysing the main signal across datasets.
 
 **Warning** Please note some data files are not included in this repository.  These are:
 
