@@ -4,6 +4,12 @@ include: "create_sample_file_with_PCs.smk"
 include: "run_hptest.smk"
 include: "figures.smk"
 
+def srcdir( path ):
+	import os
+	return os.path.join( workflow.current_basedir, path )
+
+print( srcdir( "data/bgen" ))
+
 rule all:
 	input:
 		expand(
