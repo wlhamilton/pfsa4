@@ -1,9 +1,9 @@
 rule run_hptest:
 	output:
-		sqlite = "results/hptest/hptest-thin={thin}bp-r={r}.sqlite"
+		sqlite     = "results/hptest/hptest-thin={thin}bp-r={r}.sqlite"
 	input:
-		outcome    = "results/bgen/ghana_2015_study_1555_samples.bgen",
-		predictor  = "results/vcf/ghana_2015_study_1555_samples_hbb_genotypes.vcf.gz",
+		outcome    = srcdir( "../data/bgen/ghana_2015_study_1555_samples.bgen" ),
+		predictor  = srcdir( "../data/vcf/ghana_2015_study_1555_samples_hbb_genotypes.vcf.gz" ),
 		samples    = rules.create_sample_file_with_PCs.output.samples
 	threads: 4
 	params:
@@ -13,6 +13,8 @@ rule run_hptest:
 			"-outcome-genotypes {outcome}",
 			"-s {samples}",
 			"-predictor {predictor}",
+			"-minimum-outcome-count 10",
+			"-minimum-predictor-count 10",
 			"-o {sqlite}:Result",
 			"-model add dom"
 		]).format(

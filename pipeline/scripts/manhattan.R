@@ -10,7 +10,7 @@ args = list(
 print( args )
 
 db = dbConnect( dbDriver( "SQLite" ), args$hptest )
-results = (
+results = tibble::as_tibble(
 	dbGetQuery(
 		db,
 		sprintf(

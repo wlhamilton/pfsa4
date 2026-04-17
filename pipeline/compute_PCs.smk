@@ -25,12 +25,12 @@ rule inthinnerate:
 
 rule compute_PCs:
 	output:
-		kinship = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp.kinship.csv",
-		UDUT = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp.UDUT.csv",
-		PCs = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp.PCs.tsv"
+		kinship   = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp.kinship.csv",
+		UDUT      = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp.UDUT.csv",
+		PCs       = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp.PCs.tsv"
 	input:
-		vcf = "results/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz",
-		samples = "results/samples/ghana_2015_study_1555_samples.sample",
+		vcf       = srcdir( "data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz" ),
+		samples   = srcdir( "data/samples/ghana_2015_study_1555_samples.sample" ),
 		positions = rules.inthinnerate.output.txt
 	shell: """
 	qctool_v2.2.1 \
@@ -57,9 +57,9 @@ rule compute_PC_exclusions:
 
 rule recompute_PCs:
 	output:
-		kinship = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp-r={r}.kinship.csv",
-		UDUT = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp-r={r}.UDUT.csv",
-		PCs = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp-r={r}.PCs.tsv",
+		kinship  = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp-r={r}.kinship.csv",
+		UDUT     = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp-r={r}.UDUT.csv",
+		PCs      = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp-r={r}.PCs.tsv",
 		loadings = "results/PCs/ghana_2015_study_1368_samples-thin={thin}bp-r={r}.loadings.csv"
 	input:
 		vcf         = rules.compute_PCs.input.vcf,

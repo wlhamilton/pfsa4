@@ -1,14 +1,16 @@
-include: "compute_snp_stats.smk"
-include: "compute_PCs.smk"
-include: "create_sample_file_with_PCs.smk"
-include: "run_hptest.smk"
-include: "figures.smk"
+include: "pipeline/compute_snp_stats.smk"
+include: "pipeline/compute_PCs.smk"
+include: "pipeline/create_sample_file_with_PCs.smk"
+include: "pipeline/run_hptest.smk"
+include: "pipeline/figures.smk"
 
-def srcdir( path ):
-	import os
-	return os.path.join( workflow.current_basedir, path )
+if not 'srcdir' in dir():
+	def srcdir( path ):
+		import os
+		return os.path.join( workflow.current_basedir, path )
 
-print( srcdir( "data/bgen" ))
+print( srcdir("data/bgen" ))
+print( config )
 
 rule all:
 	input:
