@@ -4,8 +4,10 @@ rule compute_snp_stats:
 	input:
 		bgen    = srcdir( "data/bgen/ghana_2015_study_1555_samples.bgen" ),
 		samples = srcdir( "data/samples/ghana_2015_study_1555_samples.sample" )
+	params:
+		qctool = config['tools']['qctool']
 	shell: """
-		qctool_v2.2.1 \
+		{params.qctool} \
 		-g {input.bgen} \
 		-s {input.samples} \
 		-threshold 0.9 \
@@ -15,7 +17,7 @@ rule compute_snp_stats:
 		-snp-stats \
 		-osnp sqlite://{output.sqlite}:SnpStats1368
 
-		qctool_v2.2.1 \
+		{params.qctool} \
 		-g {input.bgen} \
 		-s {input.samples} \
 		-threshold 0.9 \

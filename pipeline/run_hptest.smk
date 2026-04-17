@@ -8,7 +8,7 @@ rule run_hptest:
 	threads: 4
 	params:
 		boilerplate = lambda wildcards, input, output: (' '.join([
-			"hptest_v2.2.1",
+			config['tools']['hptest'],
 			"-threads {threads}",
 			"-outcome-genotypes {outcome}",
 			"-s {samples}",

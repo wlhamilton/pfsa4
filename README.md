@@ -9,7 +9,8 @@ Hamilton W. et al, "*A fourth locus in the Plasmodium falciparum genome associat
 The main analysis is provided using a [snakemake](https://snakemake.readthedocs.io/en/stable/index.html) pipeline.  To run this pipeline you need a few prerequisites:
 
 * `snakemake` (we used version `7.32.3`)
-* You need [hptest](https://www.chg.ox.ac.uk/~gav/hptest/), [qctool](https://www.chg.ox.ac.uk/~gav/qctool_v2/), and [inthinnerator](https://www.chg.ox.ac.uk/~gav/inthinnerator/#overview) in your `PATH`.
+* You need a working copy of [hptest](https://www.chg.ox.ac.uk/~gav/hptest/), [qctool](https://www.chg.ox.ac.uk/~gav/qctool_v2/), and [inthinnerator](https://www.chg.ox.ac.uk/~gav/inthinnerator/#overview).  We used `v2.2.1`.  The paths to these can be specified in `pfsa4/pipeline/config.yaml`.
+* You will also need `R` with `tidyverse` installed.
 
 You should then be able to run the pipeline from the folder containing the `pfsa4` repository, like this:
 

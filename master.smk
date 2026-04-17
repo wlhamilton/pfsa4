@@ -1,16 +1,19 @@
-include: "pipeline/compute_snp_stats.smk"
-include: "pipeline/compute_PCs.smk"
-include: "pipeline/create_sample_file_with_PCs.smk"
-include: "pipeline/run_hptest.smk"
-include: "pipeline/figures.smk"
-
+# Shim for snakemake versions > 7
 if not 'srcdir' in dir():
 	def srcdir( path ):
 		import os
 		return os.path.join( workflow.current_basedir, path )
 
-print( srcdir("data/bgen" ))
+print( srcdir( "pipeline/config.yaml" ))
+configfile: srcdir( "pipeline/config.yaml" )
+
 print( config )
+
+include: "pipeline/compute_snp_stats.smk"
+include: "pipeline/compute_PCs.smk"
+include: "pipeline/create_sample_file_with_PCs.smk"
+include: "pipeline/run_hptest.smk"
+include: "pipeline/figures.smk"
 
 rule all:
 	input:

@@ -1,0 +1,4 @@
+tools:
+  qctool: "qctool_v2.2.1"
+  hptest: "hptest_v2.2.1"
+  inthinnerator: "inthinnerator_v2.2.1"

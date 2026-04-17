@@ -18,8 +18,10 @@ rule inthinnerate:
 		txt = "results/qc/ghana_2015_study_1368_samples_f_gt_0.01_missing_lt_0.25-thin={thin}bp.txt"
 	input:
 		tsv = rules.find_common_snps.output.tsv
+	params:
+		inthinnerator = config['tools']['inthinnerator']
 	shell: """
-		inthinnerator_v2.2.1 -g {input.tsv} -min-distance {wildcards.thin}bp -suppress-excluded -o {output.tsv}
+		{params.inthinnerator} -g {input.tsv} -min-distance {wildcards.thin}bp -suppress-excluded -o {output.tsv}
 		cat {output.tsv} | grep -v '^#' | grep -v 'alternate' | cut -f1 > {output.txt}
 	"""
 
@@ -32,8 +34,10 @@ rule compute_PCs:
 		vcf       = srcdir( "data/vcf/ghana_2015_study_1555_samples.fakediploid.vcf.gz" ),
 		samples   = srcdir( "data/samples/ghana_2015_study_1555_samples.sample" ),
 		positions = rules.inthinnerate.output.txt
+	params:
+		qctool = config['tools']['qctool']
 	shell: """
-	qctool_v2.2.1 \
+	{params.qctool} \
 		-g {input.vcf} \
 		-s {input.samples} \
 		-incl-positions {input.positions} \
@@ -73,8 +77,10 @@ rule recompute_PCs:
 			)
 		),
 		snps        = rules.inthinnerate.output.txt
+	params:
+		qctool = config['tools']['qctool']
 	shell: """
-		qctool_v2.2.1 \
+		{params.qctool} \
 		-g {input.vcf} \
 		-s {input.samples} \
 		-excl-samples {input.exclusions} \
@@ -84,7 +90,7 @@ rule recompute_PCs:
 		-PCs 20 \
 		-osample {output.PCs}
 
-		qctool_v2.2.1 \
+		{params.qctool} \
 		-g {input.vcf} \
 		-s {input.samples} \
 		-excl-samples {input.exclusions} \
