@@ -239,10 +239,88 @@ HbC = (
 HbC %>% arrange( desc( `dom:log10_bf` ))
 ```
 
-## Inspectino of supplementary PCs:
+## Inspection of supplementary PCs:
 
 ```r
 original_pcs = readr::read_csv( "results/PCs/ghana_2015_study_1368_samples-thin=1bp-r=0.5.loadings.csv", comment = '#' )
 original_pcs %>% arrange( desc( abs(eigenvector_3 )))
 original_pcs %>% arrange( desc( abs(eigenvector_4 )))
 ```
+
+## Create supp table 1
+
+
+```r
+library( RSQLite )
+db = dbConnect( dbDriver( "SQLite" ), "results/hptest/hptest-thin=100bp-r=0.5.sqlite" )
+db2 = dbConnect( dbDriver( "SQLite" ), "results/hptest/hptest-thin=100bp-r=0.2.sqlite" )
+D = dplyr::bind_rows(
+	dbGetQuery( db, "SELECT '0.5' as relatedness_cutoff, R.*, alleleA AS pf_ref_allele, alleleB AS pf_alt_allele FROM ResultView R INNER JOIN Variant V ON V.id == R.outcome_id WHERE analysis IN ('samples=qcd:pcs=3', 'samples=qcd:pcs=4', 'samples=qcd:pcs=5') " ),
+	dbGetQuery( db2, "SELECT '0.2' as relatedness_cutoff, R.*, alleleA AS pf_ref_allele, alleleB AS pf_alt_allele FROM ResultView R INNER JOIN Variant V ON V.id == R.outcome_id  WHERE analysis IN ('samples=qcd:pcs=3', 'samples=qcd:pcs=4', 'samples=qcd:pcs=5') " )
+)
+
+output = (
+	D
+	%>% transmute(
+		relatedness_cutoff,
+		analysis,
+		pf_chromosome = outcome_chromosome,
+		pf_position   = outcome_position,
+		pf_ref_allele, pf_alt_allele,
+		N,
+		missing,
+		total = (N+missing),
+		pf_ref = `outcome=0`,
+		pf_nonref = `outcome=1`,
+		HbAA = `predictor=0`,
+		HbAS = `predictor=1`,
+		HbSS = `predictor=2`,
+		minimal_crosstab_count = minimum_expected_predictor_allele_count,
+		beta     = `dom:beta_1:dom/outcome=1`,
+		sd       = `dom:sd_1`,
+		se       = `dom:se_1`,
+		log10_bf = `dom:log10_bf`,
+		pvalue   = `dom:pvalue_1`
+	)
+	%>% arrange( desc( log10_bf ))
+)
+
+readr::write_csv( output, file = "results/tables/table_S1.csv")
+
+## Create supp table 2
+
+
+```r
+library( RSQLite )
+db = dbConnect( dbDriver( "SQLite" ), "results/hptest/hptest-thin=100bp-r=0.5.sqlite" )
+D = dplyr::bind_rows(
+	dbGetQuery( db, "SELECT '0.5' as relatedness_cutoff, R.*, alleleA AS pf_ref_allele, alleleB AS pf_alt_allele FROM ResultView R INNER JOIN Variant V ON V.id == R.outcome_id WHERE analysis IN ('samples=qcd:pcs=3:no-HbS') " ),
+)
+
+output = (
+	D
+	%>% transmute(
+		relatedness_cutoff,
+		analysis,
+		pf_chromosome = outcome_chromosome,
+		pf_position   = outcome_position,
+		pf_ref_allele, pf_alt_allele,
+		N,
+		missing,
+		total = (N+missing),
+		pf_ref = `outcome=0`,
+		pf_nonref = `outcome=1`,
+		HbAA = `predictor=0`,
+		HbAS = `predictor=1`,
+		HbSS = `predictor=2`,
+		minimal_crosstab_count = minimum_expected_predictor_allele_count,
+		beta     = `dom:beta_1:dom/outcome=1`,
+		sd       = `dom:sd_1`,
+		se       = `dom:se_1`,
+		log10_bf = `dom:log10_bf`,
+		pvalue   = `dom:pvalue_1`
+	)
+	%>% arrange( desc( log10_bf ))
+)
+
+readr::write_csv( output, file = "results/tables/table_S2.csv")
